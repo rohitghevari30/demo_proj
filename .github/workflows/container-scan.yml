@@ -21,6 +21,7 @@ jobs:
         with:
           image-ref: "secureapp:latest"
           format: "table"
+          severity: "CRITICAL,HIGH"
           exit-code: "1"   # set to '1' once you want this to actually fail the build
 
       # TODO: add Hadolint step (Dockerfile linting)
