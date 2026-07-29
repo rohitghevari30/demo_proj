@@ -1,0 +1,35 @@
+name: Level 3 - CI Pipeline Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  sast-and-sca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install bandit semgrep pip-audit
+
+      - name: Run Bandit (SAST)
+        run: bandit -r app
+
+      - name: Run Semgrep (SAST)
+        run: semgrep --config=auto --error app
+
+      - name: Run pip-audit (SCA - Level 2)
+        run: pip-audit -r app/requirements.txt
+
+      # TODO: add secret scanning step (Gitleaks / TruffleHog)
+      # TODO: add Trivy container scan step once Dockerfile is stable

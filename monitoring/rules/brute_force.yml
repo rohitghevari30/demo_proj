@@ -1,0 +1,12 @@
+# Level 8 — Prometheus alert rule for brute-force detection
+groups:
+  - name: brute_force_alerts
+    rules:
+      - alert: BruteForceLoginAttempt
+        expr: failed_logins_total > 200
+        for: 60s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible brute-force attack detected"
+          description: "More than 200 failed logins from a single source in 60s."

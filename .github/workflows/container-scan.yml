@@ -1,0 +1,27 @@
+name: Level 4 - Container Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/Dockerfile"
+      - "app/**"
+
+jobs:
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t secureapp:latest ./app
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "secureapp:latest"
+          format: "table"
+          exit-code: "0"   # set to '1' once you want this to actually fail the build
+
+      # TODO: add Hadolint step (Dockerfile linting)
+      # TODO: add Docker Bench for Security step

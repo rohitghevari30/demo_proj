@@ -1,0 +1,6 @@
+# Intentionally pinned to an OLDER version so pip-audit / SCA
+# tools have real CVEs to catch at Level 2. Upgrade these once
+# you've documented the findings, as part of "fixing" this level.
+Flask==2.0.1
+Werkzeug==2.0.1
+requests==2.25.1

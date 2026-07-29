@@ -1,0 +1,18 @@
+name: Level 6 - DAST Scan (Staging Only)
+
+on:
+  workflow_dispatch:   # run manually for now — wire to staging deploy later
+  # schedule:
+  #   - cron: "0 3 * * *"
+
+jobs:
+  zap-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "https://staging.yourdomain.com"   # <-- replace with your real staging URL
+          # NOTE: never point this at your Cloudflare-fronted prod domain
+
+      # TODO: parse ZAP report and push results into the React dashboard

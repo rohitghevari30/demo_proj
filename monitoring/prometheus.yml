@@ -1,0 +1,8 @@
+# Level 8 — Prometheus scrape config
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "secureapp_backend"
+    static_configs:
+      - targets: ["localhost:5000"]   # point at your deployed FastAPI/Flask app
