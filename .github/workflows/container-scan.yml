@@ -21,7 +21,7 @@ jobs:
         with:
           image-ref: "secureapp:latest"
           format: "table"
-          exit-code: "0"   # set to '1' once you want this to actually fail the build
+          exit-code: "1"   # set to '1' once you want this to actually fail the build
 
       # TODO: add Hadolint step (Dockerfile linting)
       # TODO: add Docker Bench for Security step
