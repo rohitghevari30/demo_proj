@@ -22,6 +22,8 @@ jobs:
           image-ref: "secureapp:latest"
           format: "table"
           severity: "CRITICAL,HIGH"
+          ignore-unfixed: "true"   # skip CVEs with no available patch yet (nothing to upgrade to);
+                                   # re-flagged automatically once Debian ships a fix
           exit-code: "1"   # set to '1' once you want this to actually fail the build
 
       # TODO: add Hadolint step (Dockerfile linting)
