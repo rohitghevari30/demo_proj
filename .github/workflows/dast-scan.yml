@@ -13,6 +13,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: "http://98.89.4.135:5000"
+          allow_issue_writing: false
           # NOTE: never point this at your Cloudflare-fronted prod domain
 
       # TODO: parse ZAP report and push results into the React dashboard
