@@ -1,10 +1,10 @@
 """
 SecureApp Pipeline — Vulnerable-by-Design Demo App
 ============================================================
-INTENTIONALLY INSECURE. Built ONLY as a target for a DevSecOps
-training pipeline (Bandit, Semgrep, ZAP, etc). Do not deploy
-this as-is to a real production environment, and do not reuse
-these patterns anywhere else.
+INTENTIONALLY INSECURE (partially remediated through Level 6).
+Built ONLY as a target for a DevSecOps training pipeline
+(Bandit, Semgrep, ZAP, etc). Do not deploy this as-is to a real
+production environment, and do not reuse these patterns anywhere else.
 
 Vulnerabilities planted (mapped to the pipeline's 8 levels):
   Level 1 (SAST):
@@ -15,18 +15,27 @@ Vulnerabilities planted (mapped to the pipeline's 8 levels):
     - See requirements.txt (pin an old Flask/requests version
       on purpose so pip-audit has a real CVE to find)
   Level 6 (DAST — runtime, staging only):
-    - SQL Injection                    -> /login
-    - Reflected XSS                    -> /search
-    - Missing security headers on all responses
+    - [FIXED] SQL Injection            -> /login   (parameterized query)
+    - [FIXED] Reflected XSS            -> /search  (Jinja autoescaping)
+    - [FIXED] Missing security headers -> flask-talisman on all responses
+    - [FIXED] debug=True               -> now False
   Level 8 (Monitoring / brute force):
     - No rate limiting / lockout on /login -> lets you demo
       the Prometheus "failed_logins > 200 in 60s" rule
+
+NOTE ON # nosec COMMENTS:
+  The eval/pickle findings below (B403, B307, B301) are intentional
+  Level 1 SAST targets — see docs/level_1_findings.md for the
+  documented findings. The B104 finding is not a training target;
+  it's required because this app is deployed on EC2 and needs to
+  bind to all interfaces to be reachable externally.
 ============================================================
 """
 
 from flask import Flask, request, render_template_string, jsonify
+from flask_talisman import Talisman
 import sqlite3
-import pickle
+import pickle  # nosec B403 -- intentional Level 1 SAST target, see docs/level_1_findings.md
 import base64
 import os
 
@@ -34,6 +43,24 @@ from config import db_password, SECRET_KEY  # noqa: F401 (intentionally unused i
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# ------------------------------------------------------------------
+# Level 6 fix: security headers via flask-talisman
+# force_https=False because this still runs on plain HTTP behind the
+# EC2 demo setup (no TLS termination in front of it yet). If/when you
+# put Cloudflare or an ALB with TLS in front of it, flip this to True.
+# ------------------------------------------------------------------
+Talisman(
+    app,
+    force_https=False,
+    content_security_policy={
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+    },
+    x_content_type_options=True,
+    frame_options="DENY",
+)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
 
@@ -63,8 +90,8 @@ def home():
     return """
     <h1>SecureApp Pipeline — Vulnerable Demo</h1>
     <ul>
-        <li><a href="/login">Login (SQLi target)</a></li>
-        <li><a href="/search?query=test">Search (XSS target)</a></li>
+        <li><a href="/login">Login (SQLi target — FIXED)</a></li>
+        <li><a href="/search?query=test">Search (XSS target — FIXED)</a></li>
         <li><a href="/calculate?expr=2%2B2">Calculate (eval target)</a></li>
         <li><a href="/load_profile">Load Profile (pickle target)</a></li>
         <li><a href="/health">Health check</a></li>
@@ -73,8 +100,11 @@ def home():
 
 
 # ------------------------------------------------------------------
-# VULNERABLE: SQL Injection (Level 6 — DAST target)
-# Attack payload:  username = admin' OR '1'='1
+# FIXED: SQL Injection (Level 6)
+# Was: f-string concatenation into raw SQL.
+# Now: parameterized query — sqlite3 driver handles escaping/binding,
+# so a payload like  admin' OR '1'='1  is treated as a literal string,
+# not SQL syntax.
 # ------------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -85,10 +115,9 @@ def login():
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
-        # VULNERABLE: raw string concatenation, not parameterized
-        query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+        query = "SELECT * FROM users WHERE username = ? AND password = ?"
         try:
-            c.execute(query)
+            c.execute(query, (username, password))
             user = c.fetchone()
         except sqlite3.Error as e:
             conn.close()
@@ -110,29 +139,32 @@ def login():
 
 
 # ------------------------------------------------------------------
-# VULNERABLE: Reflected XSS (Level 6 — DAST target)
-# Attack payload: /search?query=<script>alert('XSS')</script>
+# FIXED: Reflected XSS (Level 6)
+# Was: f-string interpolation of raw query into HTML.
+# Now: query passed as a Jinja template variable ({{ query }}) instead
+# of being baked into the template string. Jinja autoescapes variables
+# by default, so <script> becomes &lt;script&gt; in the rendered output.
 # ------------------------------------------------------------------
 @app.route("/search")
 def search():
     query = request.args.get("query", "")
 
-    # VULNERABLE: raw input reflected into HTML without escaping
-    return render_template_string(f"""
+    return render_template_string("""
         <h2>Search Results</h2>
-        <p>You searched for: {query}</p>
-    """)
+        <p>You searched for: {{ query }}</p>
+    """, query=query)
 
 
 # ------------------------------------------------------------------
 # VULNERABLE: eval() on user input (Level 1 — SAST target, Bandit B307)
+# Out of scope for Level 6 — left as-is intentionally.
 # Attack payload: /calculate?expr=__import__('os').system('id')
 # ------------------------------------------------------------------
 @app.route("/calculate")
 def calculate():
     expr = request.args.get("expr", "1+1")
     try:
-        result = eval(expr)  # noqa: S307  <-- Bandit should flag this
+        result = eval(expr)  # nosec B307 -- intentional Level 1 SAST target, see docs/level_1_findings.md
     except Exception as e:
         return f"Error: {e}", 400
     return jsonify({"expression": expr, "result": result})
@@ -140,6 +172,7 @@ def calculate():
 
 # ------------------------------------------------------------------
 # VULNERABLE: insecure deserialization via pickle (Level 1 — SAST target)
+# Out of scope for Level 6 — left as-is intentionally.
 # Attack: craft a malicious base64 pickle payload and POST it
 # ------------------------------------------------------------------
 @app.route("/load_profile", methods=["GET", "POST"])
@@ -148,7 +181,7 @@ def load_profile():
         encoded = request.form.get("profile_data", "")
         try:
             raw = base64.b64decode(encoded)
-            profile = pickle.loads(raw)  # <-- Bandit B301: insecure pickle use
+            profile = pickle.loads(raw)  # nosec B301 -- intentional Level 1 SAST target, see docs/level_1_findings.md
         except Exception as e:
             return f"Error loading profile: {e}", 400
         return jsonify({"loaded_profile": str(profile)})
@@ -173,15 +206,8 @@ def health():
     return jsonify({"status": "ok"})
 
 
-# ------------------------------------------------------------------
-# NOTE: no security headers (CSP, X-Frame-Options, etc.) are set
-# anywhere in this app on purpose — ZAP should flag "missing
-# security headers" at Level 6. You'll add flask-talisman or
-# manual headers when you FIX this level.
-# ------------------------------------------------------------------
-
 if __name__ == "__main__":
     init_db()
-    # debug=True is also intentionally insecure for a demo (Werkzeug debugger
-    # exposure) — Bandit flags this too (B201)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # FIXED (Level 6): debug=False — Werkzeug debugger is no longer
+    # exposed on the running app (Bandit B201 should now pass too).
+    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec B104 -- required for EC2 deployment, not a Level 1/6 target

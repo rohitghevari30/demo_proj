@@ -58,6 +58,11 @@ resource "aws_iam_role" "backend_role" {
   })
 }
 
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.backend_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "backend_profile" {
   name = "secureapp-backend-profile"
   role = aws_iam_role.backend_role.name
@@ -69,8 +74,8 @@ resource "aws_instance" "backend" {
   key_name               = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.backend_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.backend_profile.name
-  monitoring              = true
-  ebs_optimized           = true
+  monitoring             = true
+  ebs_optimized          = true
 
   root_block_device {
     encrypted = true
