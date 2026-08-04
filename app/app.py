@@ -37,9 +37,8 @@ NOTE ON # nosec / # nosemgrep COMMENTS:
 ============================================================
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_talisman import Talisman
-from markupsafe import escape
 import sqlite3
 import pickle  # nosec B403 -- intentional Level 1 SAST target, see docs/level_1_findings.md
 import base64
@@ -146,23 +145,21 @@ def login():
 
 # ------------------------------------------------------------------
 # FIXED: Reflected XSS (Level 6)
-# Was: render_template_string() with the query baked into the template
-# text. Even with Jinja's {{ query }} interpolation, Semgrep flags
-# render_template_string() itself as SSTI-risky by pattern (it can't
-# tell "used safely" from "used dangerously" from the call alone).
-# Now: plain string response with markupsafe.escape() applied directly
-# to the user input. escape() turns <script> into &lt;script&gt;,
-# and there's no template engine in the loop for Semgrep to flag.
+# Attempt 1 was render_template_string() -- flagged as SSTI-risky by
+# pattern regardless of safety.
+# Attempt 2 was an f-string with markupsafe.escape() applied manually
+# -- still flagged, because Semgrep flags any hand-built HTML string
+# with an interpolated variable and can't verify escaping correctness
+# just by reading the code.
+# Now: render_template() against a real template file
+# (templates/search.html). Jinja autoescapes .html templates by
+# default, so {{ query }} is escaped automatically, and there's no
+# manual string-building left for Semgrep to flag.
 # ------------------------------------------------------------------
 @app.route("/search")
 def search():
     query = request.args.get("query", "")
-    safe_query = escape(query)
-
-    return f"""
-        <h2>Search Results</h2>
-        <p>You searched for: {safe_query}</p>
-    """
+    return render_template("search.html", query=query)
 
 
 # ------------------------------------------------------------------
@@ -172,7 +169,7 @@ def search():
 # ------------------------------------------------------------------
 @app.route("/calculate")
 def calculate():
-    expr = request.args.get("expr", "1+1")
+    expr = request.args.get("expr", "1+1")  # nosemgrep
     try:
         result = eval(expr)  # nosec B307 -- intentional Level 1 SAST target, see docs/level_1_findings.md  # nosemgrep
     except Exception as e:
