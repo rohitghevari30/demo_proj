@@ -16,24 +16,30 @@ Vulnerabilities planted (mapped to the pipeline's 8 levels):
       on purpose so pip-audit has a real CVE to find)
   Level 6 (DAST — runtime, staging only):
     - [FIXED] SQL Injection            -> /login   (parameterized query)
-    - [FIXED] Reflected XSS            -> /search  (Jinja autoescaping)
+    - [FIXED] Reflected XSS            -> /search  (escaped via markupsafe)
     - [FIXED] Missing security headers -> flask-talisman on all responses
     - [FIXED] debug=True               -> now False
   Level 8 (Monitoring / brute force):
     - No rate limiting / lockout on /login -> lets you demo
       the Prometheus "failed_logins > 200 in 60s" rule
 
-NOTE ON # nosec COMMENTS:
+NOTE ON # nosec / # nosemgrep COMMENTS:
   The eval/pickle findings below (B403, B307, B301) are intentional
   Level 1 SAST targets — see docs/level_1_findings.md for the
   documented findings. The B104 finding is not a training target;
   it's required because this app is deployed on EC2 and needs to
   bind to all interfaces to be reachable externally.
+
+  # nosec suppresses Bandit. # nosemgrep suppresses Semgrep — they're
+  separate tools with separate suppression syntax, so intentional
+  findings need both comments to avoid failing CI on purpose-built
+  training targets while still gating on real issues.
 ============================================================
 """
 
-from flask import Flask, request, render_template_string, jsonify
+from flask import Flask, request, jsonify
 from flask_talisman import Talisman
+from markupsafe import escape
 import sqlite3
 import pickle  # nosec B403 -- intentional Level 1 SAST target, see docs/level_1_findings.md
 import base64
@@ -140,19 +146,23 @@ def login():
 
 # ------------------------------------------------------------------
 # FIXED: Reflected XSS (Level 6)
-# Was: f-string interpolation of raw query into HTML.
-# Now: query passed as a Jinja template variable ({{ query }}) instead
-# of being baked into the template string. Jinja autoescapes variables
-# by default, so <script> becomes &lt;script&gt; in the rendered output.
+# Was: render_template_string() with the query baked into the template
+# text. Even with Jinja's {{ query }} interpolation, Semgrep flags
+# render_template_string() itself as SSTI-risky by pattern (it can't
+# tell "used safely" from "used dangerously" from the call alone).
+# Now: plain string response with markupsafe.escape() applied directly
+# to the user input. escape() turns <script> into &lt;script&gt;,
+# and there's no template engine in the loop for Semgrep to flag.
 # ------------------------------------------------------------------
 @app.route("/search")
 def search():
     query = request.args.get("query", "")
+    safe_query = escape(query)
 
-    return render_template_string("""
+    return f"""
         <h2>Search Results</h2>
-        <p>You searched for: {{ query }}</p>
-    """, query=query)
+        <p>You searched for: {safe_query}</p>
+    """
 
 
 # ------------------------------------------------------------------
@@ -164,7 +174,7 @@ def search():
 def calculate():
     expr = request.args.get("expr", "1+1")
     try:
-        result = eval(expr)  # nosec B307 -- intentional Level 1 SAST target, see docs/level_1_findings.md
+        result = eval(expr)  # nosec B307 -- intentional Level 1 SAST target, see docs/level_1_findings.md  # nosemgrep
     except Exception as e:
         return f"Error: {e}", 400
     return jsonify({"expression": expr, "result": result})
@@ -181,13 +191,13 @@ def load_profile():
         encoded = request.form.get("profile_data", "")
         try:
             raw = base64.b64decode(encoded)
-            profile = pickle.loads(raw)  # nosec B301 -- intentional Level 1 SAST target, see docs/level_1_findings.md
+            profile = pickle.loads(raw)  # nosec B301 -- intentional Level 1 SAST target, see docs/level_1_findings.md  # nosemgrep
         except Exception as e:
             return f"Error loading profile: {e}", 400
         return jsonify({"loaded_profile": str(profile)})
 
     default_profile = {"name": "demo_user", "role": "guest"}
-    encoded_default = base64.b64encode(pickle.dumps(default_profile)).decode()
+    encoded_default = base64.b64encode(pickle.dumps(default_profile)).decode()  # nosemgrep
     return f"""
         <p>Default encoded profile (paste into form below):</p>
         <textarea readonly style="width:100%">{encoded_default}</textarea>
@@ -210,4 +220,4 @@ if __name__ == "__main__":
     init_db()
     # FIXED (Level 6): debug=False — Werkzeug debugger is no longer
     # exposed on the running app (Bandit B201 should now pass too).
-    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec B104 -- required for EC2 deployment, not a Level 1/6 target
+    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec B104 -- required for EC2 deployment, not a Level 1/6 target  # nosemgrep
