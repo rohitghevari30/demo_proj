@@ -1,4 +1,4 @@
-# Level 8 — Prometheus alert rule for brute-force detection
+# Level 8 — Prometheus alert rule for brute force detection
 groups:
   - name: brute_force_alerts
     rules:
