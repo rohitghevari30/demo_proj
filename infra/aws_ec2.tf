@@ -19,19 +19,19 @@ resource "aws_security_group" "backend_sg" {
   }
 
   ingress {
-    description = "Frontend dev/preview port"
+    description = "Frontend dev/preview port - restricted until behind Cloudflare"
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.admin_ip_cidr]
   }
 
   ingress {
-    description = "Prometheus metrics port"
+    description = "Prometheus metrics port - admin access only"
     from_port   = 9090
     to_port     = 9090
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.admin_ip_cidr]
   }
 
   egress {
