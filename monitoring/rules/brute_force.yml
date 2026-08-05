@@ -3,10 +3,10 @@ groups:
   - name: brute_force_alerts
     rules:
       - alert: BruteForceLoginAttempt
-        expr: failed_logins_total > 200
-        for: 60s
+        expr: increase(failed_logins_total[3m]) > 200
+        for: 2m
         labels:
           severity: critical
         annotations:
           summary: "Possible brute-force attack detected"
-          description: "More than 200 failed logins from a single source in 60s."
+          description: "More than 200 failed logins from a single source in 2m."

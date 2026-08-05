@@ -1,20 +1,25 @@
-# Optional local multi-service dev setup.
-# Fill in as Prometheus/Grafana get added locally.
-version: "3.8"
+# Local/EC2 multi-service setup: app + Prometheus + Grafana
+# for Level 8 brute-force monitoring.
 services:
   app:
     build: ./app
     ports:
       - "5000:5000"
 
-  # prometheus:
-  #   image: prom/prometheus
-  #   volumes:
-  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-  #   ports:
-  #     - "9090:9090"
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/rules:/etc/prometheus/rules
+    ports:
+      - "9090:9090"
 
-  # grafana:
-  #   image: grafana/grafana
-  #   ports:
-  #     - "3000:3000"
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  grafana-data:
