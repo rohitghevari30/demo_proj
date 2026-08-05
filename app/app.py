@@ -20,8 +20,9 @@ Vulnerabilities planted (mapped to the pipeline's 8 levels):
     - [FIXED] Missing security headers -> flask-talisman on all responses
     - [FIXED] debug=True               -> now False
   Level 8 (Monitoring / brute force):
-    - No rate limiting / lockout on /login -> lets you demo
-      the Prometheus "failed_logins > 200 in 60s" rule
+    - [FIXED] No rate limiting / lockout on /login -> now increments a
+      Prometheus counter on each failed attempt, with a
+      "failed_logins > 200 in 60s" alert rule in Grafana/Prometheus
 
 NOTE ON # nosec / # nosemgrep COMMENTS:
   The eval/pickle findings below (B403, B307, B301) are intentional
@@ -39,6 +40,8 @@ NOTE ON # nosec / # nosemgrep COMMENTS:
 
 from flask import Flask, request, jsonify, render_template
 from flask_talisman import Talisman
+from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter
 import sqlite3
 import pickle  # nosec B403 -- intentional Level 1 SAST target, see docs/level_1_findings.md
 import base64
@@ -66,6 +69,16 @@ Talisman(
     x_content_type_options=True,
     frame_options="DENY",
 )
+
+# ------------------------------------------------------------------
+# Level 8: Prometheus instrumentation
+# PrometheusMetrics(app) auto-exposes a /metrics endpoint with default
+# Flask request metrics. failed_login_counter is a custom metric
+# incremented on each failed /login attempt, scraped by Prometheus
+# and used by the BruteForceLoginAttempt alert rule.
+# ------------------------------------------------------------------
+metrics = PrometheusMetrics(app)
+failed_login_counter = Counter("failed_logins_total", "Total number of failed login attempts")
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
 
@@ -110,6 +123,13 @@ def home():
 # Now: parameterized query — sqlite3 driver handles escaping/binding,
 # so a payload like  admin' OR '1'='1  is treated as a literal string,
 # not SQL syntax.
+#
+# FIXED: No rate limiting / lockout (Level 8)
+# Was: unlimited login attempts, no visibility into brute-force
+# activity. Now: each failed attempt increments failed_login_counter,
+# scraped by Prometheus and alerted on via BruteForceLoginAttempt
+# (>200 failed logins in 60s). Deliberately still no hard lockout —
+# the point of this level is detection/alerting, not blocking.
 # ------------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -129,9 +149,9 @@ def login():
             return f"DB error: {e}", 500
         conn.close()
 
-        # No rate limiting / lockout here on purpose (Level 8 brute-force target)
         if user:
             return "Login successful!"
+        failed_login_counter.inc()
         return "Login failed.", 401
 
     return """

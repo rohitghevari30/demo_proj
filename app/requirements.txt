@@ -11,3 +11,5 @@ Werkzeug==3.1.6
 requests==2.33.0
 
 flask-talisman==1.1.0
+prometheus-flask-exporter
+prometheus-client
