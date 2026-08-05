@@ -22,7 +22,7 @@ jobs:
       - name: Run Nmap scan
         run: |
           sudo apt-get update && sudo apt-get install -y nmap
-          nmap -sV ${{ secrets.BACKEND_IP }}
+          nmap -sV -Pn ${{ secrets.BACKEND_IP }}
 
       - name: Run Shodan check
         env:
